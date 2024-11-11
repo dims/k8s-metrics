@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Failing Jobs Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        #jobTable {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+        }
+        #jobTable th, #jobTable td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        #jobTable th {
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+        #jobTable th:hover {
+            background-color: #45a049;
+        }
+        #jobTable tr:hover {
+            background-color: #f5f5f5;
+        }
+        #searchInput {
+            width: 100%;
+            padding: 12px 20px;
+            margin: 8px 0;
+            box-sizing: border-box;
+            border: 2px solid #ccc;
+            border-radius: 4px;
+        }
+        .sort-arrow {
+            display: inline-block;
+            width: 0;
+            height: 0;
+            margin-left: 5px;
+            vertical-align: middle;
+            border-right: 4px solid transparent;
+            border-left: 4px solid transparent;
+        }
+        .sort-arrow.asc {
+            border-bottom: 4px solid #fff;
+        }
+        .sort-arrow.desc {
+            border-top: 4px solid #fff;
+        }
+    </style>
+</head>
+<body>
+<h1>Failing Jobs <a href="failures-latest.json">(json)</a></h1>
+<input type="text" id="searchInput" placeholder="Search for jobs...">
+<table id="jobTable">
+    <thead>
+    <tr>
+        <th data-sort="name">Job Name <span class="sort-arrow"></span></th>
+        <th data-sort="days">Failing Days <span class="sort-arrow"></span></th>
+    </tr>
+    </thead>
+    <tbody id="jobTableBody">
+    </tbody>
+</table>
+
+<script>
+    let jobData = [];
+    let currentSort = { column: null, ascending: true };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        fetch('failures-latest.json')
+            .then(response => response.json())
+            .then(data => {
+                jobData = Object.entries(data).map(([jobName, jobInfo]) => ({
+                    name: jobName,
+                    failing_days: jobInfo.failing_days
+                }));
+                setupSorting();
+                getQueryFromURL();
+            })
+            .catch(error => console.error('Error:', error));
+
+        document.getElementById('searchInput').addEventListener('keyup', filterTable);
+    });
+
+    function getQueryFromURL() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const query = urlParams.get('q');
+        if (query) {
+            document.getElementById('searchInput').value = query;
+            filterTable();
+        } else {
+            renderTable(jobData);
+        }
+    }
+
+    function renderTable(data) {
+        const tableBody = document.getElementById('jobTableBody');
+        tableBody.innerHTML = '';
+        data.forEach(job => {
+            const row = tableBody.insertRow();
+
+            const cell1 = row.insertCell(0);
+            const cell2 = row.insertCell(1);
+
+            const jobLink = document.createElement('a');
+            jobLink.href = `https://prow.k8s.io/?job=${encodeURIComponent(job.name.replace("pr:", ""))}`;
+            jobLink.textContent = job.name.replace("pr:", "");
+            jobLink.target = '_blank';
+            cell1.appendChild(jobLink);
+
+            cell2.textContent = job.failing_days;
+        });
+    }
+
+    function filterTable() {
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        const filteredData = jobData.filter(job =>
+            job.name.toLowerCase().includes(searchTerm)
+        );
+        renderTable(filteredData);
+        updateURL(searchTerm);
+    }
+
+    function updateURL(searchTerm) {
+        const url = new URL(window.location);
+        url.searchParams.set('q', searchTerm);
+        window.history.pushState({}, '', url);
+    }
+
+    function setupSorting() {
+        const headers = document.querySelectorAll('#jobTable th');
+        headers.forEach(header => {
+            header.addEventListener('click', () => {
+                const sortKey = header.getAttribute('data-sort');
+                if (currentSort.column === sortKey) {
+                    currentSort.ascending = !currentSort.ascending;
+                } else {
+                    currentSort.column = sortKey;
+                    currentSort.ascending = true;
+                }
+                sortTable(sortKey, currentSort.ascending);
+            });
+        });
+    }
+
+    function sortTable(sortKey, ascending) {
+        const sortedData = [...jobData].sort((a, b) => {
+            if (sortKey === 'name') {
+                return ascending ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
+            } else {
+                return ascending ? a.failing_days - b.failing_days : b.failing_days - a.failing_days;
+            }
+        });
+
+        renderTable(sortedData);
+        updateSortArrows(sortKey, ascending);
+    }
+
+    function updateSortArrows(sortKey, ascending) {
+        const headers = document.querySelectorAll('#jobTable th');
+        headers.forEach(header => {
+            const arrow = header.querySelector('.sort-arrow');
+            if (header.getAttribute('data-sort') === sortKey) {
+                arrow.className = 'sort-arrow ' + (ascending ? 'asc' : 'desc');
+            } else {
+                arrow.className = 'sort-arrow';
+            }
+        });
+    }
+</script>
+</body>
+</html>
